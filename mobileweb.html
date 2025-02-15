@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>MPU-6050 Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        text-align: center;
+        background-color: #d1d5ff;
+        margin: 0;
+      }
+      h1 {
+        color: rgb(0, 0, 0);
+        font-size: 3rem;
+      }
+
+      .container {
+        display: flex;
+        justify-content: center;
+        margin-top: 1rem;
+        flex-direction: row;
+        flex-wrap: wrap;
+      }
+      .card {
+        flex-wrap: wrap;
+        background-color: #ffffff;
+        border-radius: 5px;
+        padding: 20px;
+        margin: 10px;
+        width: 35em;
+        height: 15em;
+        box-shadow: 0 4px 7px rgba(0, 0, 0, 0.1);
+        position: relative;
+      }
+      .card h2 {
+        font-size: 2rem;
+        font-weight: bold;
+        position: absolute;
+        top: 1rem;
+        left: 1rem;
+        margin: 0;
+      }
+      .data {
+        font-size: 2rem;
+        color: rgb(0, 0, 0);
+        text-align: justify;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+      }
+
+      #Chart {
+        width: 80%;
+        height: 20em;
+        margin: 10px;
+        background-color: #ffffff;
+        border-radius: 5px;
+        box-shadow: 0 4px 7px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+      }
+      .btn {
+        padding: 10px 20px;
+        background-color: #4caf50;
+        color: white;
+        text-align: center;
+        text-decoration: none;
+        display: inline-block;
+        border-radius: 5px;
+        font-size: 16px;
+        border: none;
+        cursor: pointer;
+        margin-bottom: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>DASHBOARD MONITORING</h1>
+    </div>
+    <div style="margin: 20px">
+      <label for="ipInput">Masukkan IP ESP32:</label>
+      <input type="text" id="ipInput" placeholder="Contoh: 192.168.1.10" />
+      <button onclick="setIPAddress()">Set IP</button>
+    </div>
+    <div class="container">
+      <div class="card" id="gyroCard" style="color: #3498db">
+        <h2>Gyroscope</h2>
+        <div class="data">
+          <div id="gyroX">X: Loading...</div>
+          <div id="gyroY">Y: Loading...</div>
+          <div id="gyroZ">Z: Loading...</div>
+        </div>
+      </div>
+
+      <div class="card" id="accelCard" style="color: #f39c12">
+        <h2>Accelerometer</h2>
+        <div class="data">
+          <div id="accelX">X: Loading...</div>
+          <div id="accelY">Y: Loading...</div>
+          <div id="accelZ">Z: Loading...</div>
+        </div>
+      </div>
+
+      <div class="card" id="statusCard" style="color: #e74c3c">
+        <h2>Status Pergerakan</h2>
+        <div class="data" id="status">NORMAL</div>
+      </div>
+    </div>
+
+    <div
+      style="
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 20px;
+      "
+    >
+      <div id="Chart">
+        <div style="font-size: 2rem; margin: 1%; color: #049276">Gyroscope</div>
+        <canvas id="gyroChart" style="width: 100%; height: 80%"></canvas>
+      </div>
+      <div id="Chart">
+        <div style="font-size: 2rem; margin: 1%; color: #9b59b6">
+          Accelerometer
+        </div>
+        <canvas id="accelChart" style="width: 100%; height: 80%"></canvas>
+      </div>
+    </div>
+
+    <script>
+      let esp32IP = "";
+
+      function setIPAddress() {
+        esp32IP = document.getElementById("ipInput").value;
+        if (esp32IP) {
+          alert(`IP ESP32 telah diatur ke ${esp32IP}`);
+        } else {
+          alert("Mohon masukkan IP yang valid.");
+        }
+      }
+
+      const gyroData = { x: [], y: [], z: [] };
+      const accelData = { x: [], y: [], z: [] };
+
+      let lastGyroData = null;
+      let lastAccelData = null;
+      let lastDataTime = Date.now();
+      const dangerThreshold = 10 * 60 * 1000; // 10 menit dalam milidetik
+      const maxDataLength = 200; // Maximum number of data points
+
+      const gyroChartCtx = document
+        .getElementById("gyroChart")
+        .getContext("2d");
+      const accelChartCtx = document
+        .getElementById("accelChart")
+        .getContext("2d");
+
+      const gyroChart = new Chart(gyroChartCtx, {
+        type: "line",
+        data: {
+          labels: [], // Labels will be the time of update
+          datasets: [
+            {
+              label: "Gyro X",
+              data: gyroData.x,
+              borderColor: "rgba(255, 99, 132, 1)",
+              fill: false,
+            },
+            {
+              label: "Gyro Y",
+              data: gyroData.y,
+              borderColor: "rgba(54, 162, 235, 1)",
+              fill: false,
+            },
+            {
+              label: "Gyro Z",
+              data: gyroData.z,
+              borderColor: "rgba(75, 192, 192, 1)",
+              fill: false,
+            },
+          ],
+        },
+        options: {
+          scales: {
+            x: {
+              type: "category", // Use category to show time on the x-axis
+            },
+          },
+        },
+      });
+
+      const accelChart = new Chart(accelChartCtx, {
+        type: "line",
+        data: {
+          labels: [], // Labels will be the time of update
+          datasets: [
+            {
+              label: "Accel X",
+              data: accelData.x,
+              borderColor: "rgba(255, 159, 64, 1)",
+              fill: false,
+            },
+            {
+              label: "Accel Y",
+              data: accelData.y,
+              borderColor: "rgba(153, 102, 255, 1)",
+              fill: false,
+            },
+            {
+              label: "Accel Z",
+              data: accelData.z,
+              borderColor: "rgba(255, 206, 86, 1)",
+              fill: false,
+            },
+          ],
+        },
+        options: {
+          scales: {
+            x: {
+              type: "category", // Use category to show time on the x-axis
+            },
+            y: {
+              title: {
+                display: true,
+                text: "Accelerometer",
+              },
+            },
+          },
+        },
+      });
+
+      setInterval(() => {
+        if (esp32IP) {
+          fetch(`http://${esp32IP}/data`)
+            .then((response) => response.json())
+            .then((data) => {
+              // Update Gyroscope data
+              document.getElementById("gyroX").innerHTML = "X: " + data.gx;
+              document.getElementById("gyroY").innerHTML = "Y: " + data.gy;
+              document.getElementById("gyroZ").innerHTML = "Z: " + data.gz;
+
+              // Limit data to 200 points
+              if (gyroData.x.length >= maxDataLength) {
+                gyroData.x.shift();
+                gyroData.y.shift();
+                gyroData.z.shift();
+                gyroChart.data.labels.shift();
+              }
+
+              gyroData.x.push(data.gx);
+              gyroData.y.push(data.gy);
+              gyroData.z.push(data.gz);
+
+              const currentTime = new Date().toLocaleTimeString();
+              gyroChart.data.labels.push(currentTime); // Add time as x-axis label
+              gyroChart.update();
+
+              // Update Accelerometer data
+              document.getElementById("accelX").innerHTML = "X: " + data.ax;
+              document.getElementById("accelY").innerHTML = "Y: " + data.ay;
+              document.getElementById("accelZ").innerHTML = "Z: " + data.az;
+
+              // Limit data to 200 points
+              if (accelData.x.length >= maxDataLength) {
+                accelData.x.shift();
+                accelData.y.shift();
+                accelData.z.shift();
+                accelChart.data.labels.shift();
+              }
+
+              accelData.x.push(data.ax);
+              accelData.y.push(data.ay);
+              accelData.z.push(data.az);
+
+              accelChart.data.labels.push(currentTime); // Add time as x-axis label
+              accelChart.update();
+
+              lastDataTime = Date.now();
+
+              // Update status
+              updateStatus();
+            });
+        }
+      }, 1000);
+
+      function updateStatus() {
+        const currentTime = Date.now();
+        const elapsedTime = currentTime - lastDataTime;
+        if (elapsedTime > dangerThreshold) {
+          document.getElementById("status").innerHTML = "DANGER";
+        } else {
+          document.getElementById("status").innerHTML = "NORMAL";
+        }
+      }
+    </script>
+  </body>
+</html>
